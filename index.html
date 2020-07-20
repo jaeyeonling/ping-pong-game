@@ -1,0 +1,244 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>핑퐁 게이임</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+    <script>
+        const BALL_SPEED = 15, PLAYER_SPEED = BALL_SPEED / 1.5;
+        const SMASH_SPEED_MULTIPLE = 1.5;
+
+        const FORWARD = 1, OPPOSITE = -1;
+        const WIDTH = 700, HEIGHT = 600;
+
+        let canvas, context, keyState, win, lose;
+
+        const player = {
+            x: null,
+            y: null,
+            width: 20,
+            height: 100,
+
+            update: function() {
+                if (keyState.ArrowUp) {
+                    this.y -= PLAYER_SPEED;
+                }
+                if (keyState.ArrowDown) {
+                    this.y += PLAYER_SPEED;
+                }
+
+                this.y = Math.max(Math.min(this.y, HEIGHT - this.height), 0);
+            },
+            draw: function() {
+                context.fillRect(
+                    this.x,
+                    this.y,
+                    this.width,
+                    this.height
+                );
+
+            }
+        };
+
+        const ai = {
+            x: null,
+            y: null,
+            width: 20,
+            height: 100,
+
+            update: function() {
+                const destination = ball.y - (this.height - ball.side) / 2 * .5;
+                this.y += (destination - this.y) * .2;
+
+                this.y = Math.max(Math.min(this.y, HEIGHT - this.height), 0);
+            },
+            draw: function() {
+                context.fillRect(
+                    this.x,
+                    this.y,
+                    this.width,
+                    this.height
+                );
+            }
+        };
+
+        const ball = {
+            x: null,
+            y: null,
+            side: 20,
+            velocity: {
+                x: 0,
+                y: 0
+            },
+
+            serve: function(side) {
+                const randomValue =  Math.random();
+
+                this.x = side === FORWARD ? player.x + player.width : ai.x - this.side;
+                this.y = (HEIGHT - this.side) * randomValue;
+
+                const phi = .1 * Math.PI * (1 - 2 * randomValue);
+                this.velocity.x = side * BALL_SPEED * Math.cos(phi);
+                this.velocity.y = BALL_SPEED * Math.sin(phi);
+            },
+
+            update: function() {
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+
+                if (0 > this.y || this.y + this.side > HEIGHT) {
+                    const getOffset = () => {
+                        if (this.velocity.y < 0) {
+                            return 0 - this.y;
+                        }
+
+                        return HEIGHT - (this.y + this.side);
+                    }
+
+                    this.y += 2 * getOffset();
+                    this.velocity.y *= OPPOSITE;
+                }
+
+                const axisAlignedBoundingBoxesIntersect = (paddleX, paddleY, paddleWidth, paddleHeight,
+                                                           ballX, ballY, ballWidth, ballHeight) => {
+                    return paddleX < ballX + ballWidth &&
+                        paddleY < ballY + ballHeight &&
+                        ballX < paddleX + paddleWidth &&
+                        ballY < paddleY + paddleHeight;
+                }
+
+                const paddle = this.velocity.x < 0 ? player : ai;
+                const isIntersect = axisAlignedBoundingBoxesIntersect(
+                    paddle.x,
+                    paddle.y,
+                    paddle.width,
+                    paddle.height,
+                    this.x,
+                    this.y,
+                    this.side,
+                    this.side
+                );
+
+                const isPlayer = paddle === player;
+                const direction = isPlayer ? FORWARD : OPPOSITE;
+
+                if (isIntersect) {
+                    this.x = isPlayer ? player.x + player.width : ai.x - this.side;
+
+                    const betweenPaddles = (this.y + this.side - paddle.y) / (paddle.height + this.side);
+                    const radian = .25 * Math.PI;
+                    const phi = radian * (2 * betweenPaddles - 1);
+
+                    this.velocity.x = direction * BALL_SPEED * Math.cos(phi);
+                    this.velocity.y = BALL_SPEED * Math.sin(phi);
+
+                    const isSmash = Math.abs(phi) > .2 * Math.PI;
+                    if (isSmash) {
+                        this.velocity.x *= SMASH_SPEED_MULTIPLE;
+                        this.velocity.y *= SMASH_SPEED_MULTIPLE;
+                    }
+                }
+
+                if (0 > this.x + this.side) {
+                    ++lose;
+                    this.serve(direction);
+                }
+                if (this.x > WIDTH) {
+                    ++win;
+                    this.serve(direction);
+                }
+            },
+            draw: function() {
+                context.fillRect(
+                    this.x,
+                    this.y,
+                    this.side,
+                    this.side
+                );
+            }
+        };
+
+        function main() {
+            canvas = document.createElement('canvas');
+            canvas.width = WIDTH;
+            canvas.height = HEIGHT;
+
+            context = canvas.getContext('2d');
+
+            keyState = { };
+
+            document.addEventListener('keydown', event => keyState[event.key] = true);
+            document.addEventListener('keyup', event => delete keyState[event.key]);
+
+            document.body.appendChild(canvas);
+
+            init();
+            loop();
+        }
+
+        function init() {
+            win = 0;
+            lose = 0;
+
+            player.x = player.width;
+            player.y = (HEIGHT - player.height) / 2;
+
+            ai.x = WIDTH - (player.width + ai.width);
+            ai.y = (HEIGHT - ai.height) / 2;
+
+            ball.serve(1);
+        }
+
+        function loop() {
+            update();
+            draw();
+
+            window.requestAnimationFrame(loop);
+        }
+
+        function update() {
+            player.update();
+            ai.update();
+            ball.update();
+        }
+
+        function draw() {
+            context.fillRect(
+                0,
+                0,
+                WIDTH,
+                HEIGHT
+            );
+            context.save();
+            context.fillStyle = '#FFF';
+
+            player.draw();
+            ai.draw();
+            ball.draw();
+
+            const width = 4;
+            const x = (WIDTH - width) * .5;
+            const step = HEIGHT / 15;
+
+            let y = 0;
+            while (y < HEIGHT) {
+                context.fillRect(
+                    x,
+                    y + step * .25,
+                    width,
+                    step * .5
+                );
+                y += step;
+            }
+
+            context.fillStyle = '#FFF';
+            context.fillText(`WIN: ${win} / LOSE: ${lose}`, 10, canvas.height - 10);
+            context.restore();
+        }
+
+        main();
+    </script>
+</body>
+</html>
